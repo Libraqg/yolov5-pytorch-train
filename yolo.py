@@ -83,7 +83,7 @@ class YOLO(object):
     def __init__(self, **kwargs):
         self.__dict__.update(self._defaults)
         for name, value in kwargs.items():
-            setattr(self, name, value)
+            setattr(self, name, value) #name是一个变量 所以用setatter 可以根据输入覆盖掉初始默认值 
             self._defaults[name] = value 
             
         #---------------------------------------------------#
@@ -249,20 +249,20 @@ class YOLO(object):
         #---------------------------------------------------------#
         image_data  = np.expand_dims(np.transpose(preprocess_input(np.array(image_data, dtype='float32')), (2, 0, 1)), 0)
 
-        with torch.no_grad():
-            images = torch.from_numpy(image_data)
-            if self.cuda:
+        with torch.no_grad(): #关闭梯度计算 使用已经训练好的参数
+            images = torch.from_numpy(image_data) #将 NumPy 数组转换为 PyTorch 张量
+            if self.cuda: # 如果 self.cuda 为 True, 将张量移动到 GPU
                 images = images.cuda()
             #---------------------------------------------------------#
             #   将图像输入网络当中进行预测！
             #---------------------------------------------------------#
-            outputs = self.net(images)
-            outputs = self.bbox_util.decode_box(outputs)
+            outputs = self.net(images)#前向传播
+            outputs = self.bbox_util.decode_box(outputs)#对输出进行解码 转换成bbox
             #---------------------------------------------------------#
             #   将预测框进行堆叠，然后进行非极大抑制
             #---------------------------------------------------------#
-            results = self.bbox_util.non_max_suppression(torch.cat(outputs, 1), self.num_classes, self.input_shape, 
-                        image_shape, self.letterbox_image, conf_thres=self.confidence, nms_thres=self.nms_iou)
+            results = self.bbox_util.non_max_suppression(torch.cat(outputs, 1), self.num_classes, self.input_shape, #将多种anchor的预测结果整合
+                        image_shape, self.letterbox_image, conf_thres=self.confidence, nms_thres=self.nms_iou)#简答理解为减少噪声
                                                     
         t1 = time.time()
         for _ in range(test_interval):
@@ -282,11 +282,11 @@ class YOLO(object):
         tact_time = (t2 - t1) / test_interval
         return tact_time
 
-    def detect_heatmap(self, image, heatmap_save_path):
+    def detect_heatmap(self, image, heatmap_save_path): #可视化工作 生成热力图
         import cv2
         import matplotlib.pyplot as plt
-        def sigmoid(x):
-            y = 1.0 / (1.0 + np.exp(-x))
+        def sigmoid(x): #不能用softmax，softmax有竞争性，而这里要保证处理后的数据有独立性，也就是和不用等于1，只需保持在(0,1)范围内
+            y = 1.0 / (1.0 + np.exp(-x)) #numpy库中的exp函数 可以对整个数组进行批量运算
             return y
         #---------------------------------------------------------#
         #   在这里将图像转换成RGB图像，防止灰度图在预测时报错。
@@ -315,8 +315,8 @@ class YOLO(object):
         plt.imshow(image, alpha=1)
         plt.axis('off')
         mask    = np.zeros((image.size[1], image.size[0]))
-        for sub_output in outputs:
-            sub_output = sub_output.cpu().numpy()
+        for sub_output in outputs: #环处理多尺度输出，生成并融合热力图
+            sub_output = sub_output.cpu().numpy() #NumPy, OpenCV, Matplotlib 只能在CPU上工作，它们无法直接访问GPU内存
             b, c, h, w = np.shape(sub_output)
             sub_output = np.transpose(np.reshape(sub_output, [b, 3, -1, h, w]), [0, 3, 4, 1, 2])[0]
             score      = np.max(sigmoid(sub_output[..., 4]), -1)
@@ -327,8 +327,8 @@ class YOLO(object):
         plt.imshow(mask, alpha=0.5, interpolation='nearest', cmap="jet")
 
         plt.axis('off')
-        plt.subplots_adjust(top=1, bottom=0, right=1,  left=0, hspace=0, wspace=0)
-        plt.margins(0, 0)
+        plt.subplots_adjust(top=1, bottom=0, right=1,  left=0, hspace=0, wspace=0) #这是一系列去除所有内部白边的操作 调整子图间距，填满整个画布
+        plt.margins(0, 0) #移除画布边距
         plt.savefig(heatmap_save_path, dpi=200, bbox_inches='tight', pad_inches = -0.1)
         print("Save to the " + heatmap_save_path)
         plt.show()
@@ -336,7 +336,7 @@ class YOLO(object):
     def convert_to_onnx(self, simplify, model_path):
         import onnx
         self.generate(onnx=True)
-
+        #这里创建伪输入im是torch.onnx.export 追踪机制所必需的输入 定义模型的输入规范以及确定一条具体的执行路径
         im                  = torch.zeros(1, 3, *self.input_shape).to('cpu')  # image size(1, 3, 512, 512) BCHW
         input_layer_names   = ["images"]
         output_layer_names  = ["output"]
@@ -659,5 +659,6 @@ class YOLO_ONNX(object):
             draw.rectangle([tuple(text_origin), tuple(text_origin + label_size)], fill=self.colors[c])
             draw.text(text_origin, str(label,'UTF-8'), fill=(0, 0, 0), font=font)
             del draw
+
 
         return image
