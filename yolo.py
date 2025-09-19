@@ -356,24 +356,24 @@ class YOLO(object):
 
         # Checks
         model_onnx = onnx.load(model_path)  # load onnx model
-        onnx.checker.check_model(model_onnx)  # check onnx model
+        onnx.checker.check_model(model_onnx)  # check onnx model 使用 onnx 内置的检查器来验证模型的结构是否符合 ONNX 规范
 
-        # Simplify onnx
+        # Simplify onnx 'simplify' 是一个布尔值参数，决定了是否执行这个代码块 这部分可选
         if simplify:
             import onnxsim
             print(f'Simplifying with onnx-simplifier {onnxsim.__version__}.')
             model_onnx, check = onnxsim.simplify(
-                model_onnx,
-                dynamic_input_shape=False,
-                input_shapes=None)
-            assert check, 'assert check failed'
-            onnx.save(model_onnx, model_path)
+                model_onnx,         # 输入的 onnx 模型
+                dynamic_input_shape=False,  # 输入尺寸是否是动态的
+                input_shapes=None)   # 如果是动态的，在这里提供示例尺寸
+            assert check, 'assert check failed' 验证简化结果
+            onnx.save(model_onnx, model_path) #保存简化后的模型 (覆盖原始文件)
 
         print('Onnx model save as {}'.format(model_path))
 
     def get_map_txt(self, image_id, image, class_names, map_out_path):
         f = open(os.path.join(map_out_path, "detection-results/"+image_id+".txt"), "w", encoding='utf-8') 
-        image_shape = np.array(np.shape(image)[0:2])
+        image_shape = np.array(np.shape(image)[0:2]) #获取原始图片尺寸，用于后续坐标还原
         #---------------------------------------------------------#
         #   在这里将图像转换成RGB图像，防止灰度图在预测时报错。
         #   代码仅仅支持RGB图像的预测，所有其它类型的图像都会转化成RGB
@@ -390,8 +390,8 @@ class YOLO(object):
         image_data  = np.expand_dims(np.transpose(preprocess_input(np.array(image_data, dtype='float32')), (2, 0, 1)), 0)
 
         with torch.no_grad():
-            images = torch.from_numpy(image_data)
-            if self.cuda:
+            images = torch.from_numpy(image_data) #将 NumPy 数组 image_data 转换为 PyTorch 张量 (torch.Tensor)
+            if self.cuda: #条件判断，检查用户是否希望并能够使用 GPU 进行加速。self.cuda 是一个在对象初始化时就设置好的布尔值 (True 或 False)
                 images = images.cuda()
             #---------------------------------------------------------#
             #   将图像输入网络当中进行预测！
@@ -404,22 +404,24 @@ class YOLO(object):
             results = self.bbox_util.non_max_suppression(torch.cat(outputs, 1), self.num_classes, self.input_shape, 
                         image_shape, self.letterbox_image, conf_thres = self.confidence, nms_thres = self.nms_iou)
                                                     
-            if results[0] is None: 
+            if results[0] is None: #如果 NMS 之后没有任何物体被保留下来，列表的第一个元素会是 None
                 return 
 
             top_label   = np.array(results[0][:, 6], dtype = 'int32')
             top_conf    = results[0][:, 4] * results[0][:, 5]
             top_boxes   = results[0][:, :4]
 
-        for i, c in list(enumerate(top_label)):
-            predicted_class = self.class_names[int(c)]
-            box             = top_boxes[i]
-            score           = str(top_conf[i])
+        for i, c in list(enumerate(top_label)): #循环遍历所有检测结果
+            predicted_class = self.class_names[int(c)] #根据类别索引 c，从类别名称列表中找到对应的字符串名称
+            box             = top_boxes[i] #根据当前循环的索引 i，找到对应的边界框坐标
+            score           = str(top_conf[i]) #根据当前循环的索引 i，找到对应的置信度分数，并转换为字符串
 
-            top, left, bottom, right = box
-            if predicted_class not in class_names:
+            top, left, bottom, right = box #提取具体的坐标值
+
+          #假设模型能识别 80 个类，但用户只想评测 "person" 和 "car" 这两个类的 mAP。那么当模型检测出一个 "bicycle" 时，这个 if 条件就会成立，continue 语句会使程序跳过本次循环的剩余部分，直接进入下一次循环。这确保了最终的 .txt 文件里只包含用户感兴趣的类别。
+            if predicted_class not in class_names: #如果预测出的类别不在用户指定的 class_names 列表中，则跳过这个结果
                 continue
-
+            #将所有信息格式化成一个由空格分隔的字符串，并在末尾加上换行符 \n
             f.write("%s %s %s %s %s %s\n" % (predicted_class, score[:6], str(int(left)), str(int(top)), str(int(right)),str(int(bottom))))
 
         f.close()
@@ -462,12 +464,12 @@ class YOLO_ONNX(object):
         "letterbox_image"   : True
     }
     
-    @classmethod
-    def get_defaults(cls, n):
-        if n in cls._defaults:
-            return cls._defaults[n]
+    @classmethod #装饰器，它将下面的方法声明为“类方法”
+    def get_defaults(cls, n): #定义方法，接收 cls 和 n 两个参数
+        if n in cls._defaults: #在类的 _defaults 字典中检查 n是否存在
+            return cls._defaults[n] #如果存在，返回对应的值
         else:
-            return "Unrecognized attribute name '" + n + "'"
+            return "Unrecognized attribute name '" + n + "'" #如果不存在，返回一个错误提示字符串
 
     #---------------------------------------------------#
     #   初始化YOLO
@@ -479,7 +481,7 @@ class YOLO_ONNX(object):
             self._defaults[name] = value 
             
         import onnxruntime
-        self.onnx_session   = onnxruntime.InferenceSession(self.onnx_path)
+        self.onnx_session   = onnxruntime.InferenceSession(self.onnx_path) #创建一个 ONNX 推理会话 (session) 一个已经预热好、并且熟悉了 .onnx 模型内部所有路径的模型
         # 获得所有的输入node
         self.input_name     = self.get_input_name()
         # 获得所有的输出node
@@ -493,21 +495,21 @@ class YOLO_ONNX(object):
         self.bbox_util                      = DecodeBoxNP(self.anchors, self.num_classes, (self.input_shape[0], self.input_shape[1]), self.anchors_mask)
 
         #---------------------------------------------------#
-        #   画框设置不同的颜色
+        #   画框设置不同的颜色 根据类别的数量 (self.num_classes)，自动生成一个包含多种不同颜色的列表 self.colors
         #---------------------------------------------------#
         hsv_tuples  = [(x / self.num_classes, 1., 1.) for x in range(self.num_classes)]
         self.colors = list(map(lambda x: colorsys.hsv_to_rgb(*x), hsv_tuples))
         self.colors = list(map(lambda x: (int(x[0] * 255), int(x[1] * 255), int(x[2] * 255)), self.colors))
 
-        show_config(**self._defaults)
+        show_config(**self._defaults) #字典的解包 (Dictionary Unpacking) 辅助函数，将当前对象的所有配置参数打印到控制台上
  
-    def get_classes(self, classes_path):
+    def get_classes(self, classes_path): #从一个 .txt 文件中读取所有类别的名称
         with open(classes_path, encoding='utf-8') as f:
             class_names = f.readlines()
         class_names = [c.strip() for c in class_names]
         return class_names, len(class_names)
     
-    def get_anchors(self, anchors_path):
+    def get_anchors(self, anchors_path): #加载 Anchor Boxes (先验框) 的尺寸
         '''loads the anchors from a file'''
         with open(anchors_path, encoding='utf-8') as f:
             anchors = f.readline()
@@ -515,14 +517,14 @@ class YOLO_ONNX(object):
         anchors = np.array(anchors).reshape(-1, 2)
         return anchors, len(anchors)
 
-    def get_input_name(self):
+    def get_input_name(self): #获取 ONNX 模型所有输入节点的名称
         # 获得所有的输入node
         input_name=[]
         for node in self.onnx_session.get_inputs():
             input_name.append(node.name)
         return input_name
  
-    def get_output_name(self):
+    def get_output_name(self): #获取 ONNX 模型所有输出节点的名称
         # 获得所有的输出node
         output_name=[]
         for node in self.onnx_session.get_outputs():
@@ -623,7 +625,7 @@ class YOLO_ONNX(object):
         top_boxes   = results[0][:, :4]
 
         #---------------------------------------------------------#
-        #   设置字体与边框厚度
+        #   设置字体与边框厚度 使边界框的粗细就和输入图片的整体尺寸成正比。图片越大，框就越粗
         #---------------------------------------------------------#
         font        = ImageFont.truetype(font='model_data/simhei.ttf', size=np.floor(3e-2 * image.size[1] + 0.5).astype('int32'))
         thickness   = int(max((image.size[0] + image.size[1]) // np.mean(self.input_shape), 1))
@@ -631,34 +633,36 @@ class YOLO_ONNX(object):
         #---------------------------------------------------------#
         #   图像绘制
         #---------------------------------------------------------#
-        for i, c in list(enumerate(top_label)):
+        for i, c in list(enumerate(top_label)): #循环遍历所有检测结果
+            #提取信息
             predicted_class = self.class_names[int(c)]
             box             = top_boxes[i]
             score           = top_conf[i]
 
             top, left, bottom, right = box
-
+            #确保坐标不会超出图片边界
             top     = max(0, np.floor(top).astype('int32'))
             left    = max(0, np.floor(left).astype('int32'))
             bottom  = min(image.size[1], np.floor(bottom).astype('int32'))
             right   = min(image.size[0], np.floor(right).astype('int32'))
 
-            label = '{} {:.2f}'.format(predicted_class, score)
-            draw = ImageDraw.Draw(image)
-            label_size = draw.textsize(label, font)
+            label = '{} {:.2f}'.format(predicted_class, score) #格式化标签字符串，例如："person 0.99"
+            draw = ImageDraw.Draw(image) # 创建一个可以在图片上进行绘制的 draw 对象
+            label_size = draw.textsize(label, font) #使用 draw.textsize 计算出这个标签文本实际占用的像素尺寸 (width, height)
             label = label.encode('utf-8')
             print(label, top, left, bottom, right)
             
-            if top - label_size[1] >= 0:
-                text_origin = np.array([left, top - label_size[1]])
+            if top - label_size[1] >= 0: #判断标签文本框应该放在边界框的上方还是下方
+                text_origin = np.array([left, top - label_size[1]]) #如果边界框的顶部有足够的空间容纳文字，就放在上面
             else:
-                text_origin = np.array([left, top + 1])
+                text_origin = np.array([left, top + 1]) #否则，就放在边界框的内部顶端
 
-            for i in range(thickness):
+            for i in range(thickness): #使用一个循环来绘制指定厚度的边框
                 draw.rectangle([left + i, top + i, right - i, bottom - i], outline=self.colors[c])
-            draw.rectangle([tuple(text_origin), tuple(text_origin + label_size)], fill=self.colors[c])
-            draw.text(text_origin, str(label,'UTF-8'), fill=(0, 0, 0), font=font)
+            draw.rectangle([tuple(text_origin), tuple(text_origin + label_size)], fill=self.colors[c]) #绘制文本框的背景矩形
+            draw.text(text_origin, str(label,'UTF-8'), fill=(0, 0, 0), font=font) #在背景矩形上绘制文字
             del draw
 
 
         return image
+
